@@ -1,6 +1,6 @@
 {
   "name": "dsh-memewiki",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "梗百科：6668 条网络梗本地词库，查词工具、自动预查注入和设置页黑话编辑。移植自 AstrBot 插件 astrbot_plugin_memewiki。",
   "type": "module",
   "license": "MIT",

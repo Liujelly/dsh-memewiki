@@ -25,6 +25,12 @@ assert.equal(normalizeQuery('666666'), '666');
 assert.equal(normalizeQuery('管人痴'), '管人痴');
 assert.equal(worthSearch('这是什么梗', 10), true);
 assert.equal(worthSearch('为什么这个不行', 10), false);
+assert.equal(worthSearch('这局打得跟管人痴一样', 10, { inSentence: true }), true);
+assert.equal(worthSearch('晚上吃什么好呢', 10, { inSentence: true }), false);
+assert.equal(extractQuery('这局打得跟管人痴一样', 10), '这局打得跟管人痴一样');
+assert.equal(extractQuery('这局打得跟管人痴一样', 6), '');
+assert.equal(extractQuery('管人痴是什么梗', 3), '管人痴');
+assert.equal(extractQuery('管人痴是什么梗', 2), '');
 assert.equal(validateConfig({}).maxQueryChars, defaults.maxQueryChars);
 assert.throws(() => validateConfig({ maxQueryChars: 99 }), /2 到 20/);
 assert.throws(() => validateConfig({ preload: 'yes' }), /布尔值/);
@@ -34,7 +40,13 @@ const calls = { tools: [], sections: [], contexts: [], routes: [], listeners: {}
 const makeCtx = (bucket) => ({
   tools: { register: (def) => (bucket.tools.push(def), () => {}) },
   systemPrompt: {
-    section: (s) => (bucket.sections.push(s), () => {}),
+    section: (s) => {
+      bucket.sections.push(s);
+      return () => {
+        const index = bucket.sections.indexOf(s);
+        if (index !== -1) bucket.sections.splice(index, 1);
+      };
+    },
     context: (c) => (bucket.contexts.push(c), () => {}),
   },
   webServer: { register: (r) => (bucket.routes.push(r), () => {}) },
@@ -67,6 +79,10 @@ assert.equal(alias.title, hit.title);
 const brief = await run('管人痴', true);
 assert.ok(!brief.text.includes('【出处'));
 assert.ok(!brief.text.includes('cnmeme.wiki'));
+assert.ok(brief.text.includes('怎么用'), 'brief 应保留用法');
+assert.ok(!brief.text.includes('“管人”一词源于'), 'brief 不该带出处正文');
+assert.ok(!brief.text.includes('演化'), 'brief 不该带词条正文的后续段落');
+assert.ok(brief.text.length < hit.text.length / 2, 'brief 应明显短于完整词条');
 
 const miss = await run('不存在的词啊啊');
 assert.equal(miss.found, false);
@@ -100,6 +116,10 @@ console.log('--- 预查注入 ---\n' + injected.slice(0, 300));
 /* 普通聊天不注入 */
 events.push({ type: 'user/message', data: { source: { kind: 'user' }, content: [{ type: 'text', text: '你今天怎么样' }] } });
 assert.equal(ctxReg.text(), '');
+
+/* 普通疑问句不注入：虽然句子里有词库收录的「吃什么」 */
+events.push({ type: 'user/message', data: { source: { kind: 'user' }, content: [{ type: 'text', text: '晚上吃什么好呢' }] } });
+assert.equal(ctxReg.text(), '', '普通疑问句不应预查');
 
 /* 设置页路由 */
 const paths = calls.routes.map((r) => r.path).sort();
@@ -161,6 +181,37 @@ assert.equal((await getState()).settings.maxQueryChars, 6);
 
 const badSetting = await post('/dsh-memewiki/settings', { settings: { maxQueryChars: 0 } });
 assert.equal(badSetting.ok, false);
+
+/* 常驻提示即时开关 */
+assert.equal(calls.sections.filter((s) => s.name === 'memewiki:guide').length, 1);
+const guideOff = await post('/dsh-memewiki/settings', { settings: { guide: false } });
+assert.equal(guideOff.ok, true);
+assert.equal(calls.sections.filter((s) => s.name === 'memewiki:guide').length, 0, '关掉后应立即卸载');
+const guideBack = await post('/dsh-memewiki/settings', { settings: { guide: true } });
+assert.equal(guideBack.ok, true);
+assert.equal(calls.sections.filter((s) => s.name === 'memewiki:guide').length, 1, '打开后应立即装回');
+
+/* 自定义提示词 */
+const custom = await post('/dsh-memewiki/settings', { settings: { guidance: '自定义：先查再说话' } });
+assert.equal(custom.settings.guidance, '自定义：先查再说话');
+assert.equal(custom.settings.guidanceText, '自定义：先查再说话');
+assert.match(calls.sections.find((s) => s.name === 'memewiki:guide').text(), /先查再说话/);
+const customReset = await post('/dsh-memewiki/settings', { settings: { guidance: '' } });
+assert.equal(customReset.settings.guidance, '');
+assert.match(calls.sections.find((s) => s.name === 'memewiki:guide').text(), /search_meme_wiki/, '留空应回到内置文案');
+
+/* maxQueryChars 对预查生效 */
+const widened = await post('/dsh-memewiki/settings', { settings: { preload: true, maxQueryChars: 10 } });
+assert.equal(widened.ok, true);
+events.push({ type: 'user/message', data: { source: { kind: 'user' }, content: [{ type: 'text', text: '打得跟管人痴一样' }] } });
+assert.match(ctxReg.text(), /梗词库内部资料/, '十字的用法句应预查');
+const narrowed = await post('/dsh-memewiki/settings', { settings: { maxQueryChars: 6 } });
+assert.equal(narrowed.ok, true);
+assert.equal(ctxReg.text(), '', '超过 maxQueryChars 的句子不预查');
+
+/* 收尾：恢复默认，方便后面的落盘断言 */
+const restore = await post('/dsh-memewiki/settings', { settings: { preload: false, maxQueryChars: 6 } });
+assert.equal(restore.ok, true);
 
 const del = await post('/dsh-memewiki/term', { action: 'delete', name: '妮娅的梗' });
 assert.equal(del.ok, true);

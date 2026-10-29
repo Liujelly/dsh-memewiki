@@ -82,6 +82,7 @@ const cold = makeReact();
 const reg = load(cold);
 if (!reg) throw new Error('没有注册 settings.section');
 if (reg.key !== 'settings.section') throw new Error(`槽位不对：${reg.key}`);
+if (reg.id !== 'dsh-memewiki') throw new Error(`模块注册 id 必须等于包名，现在是：${reg.id}`);
 if (reg.decl.id !== 'memewiki') throw new Error(`id 不对：${reg.decl.id}`);
 if (reg.decl.order !== 44) throw new Error(`order 不对：${reg.decl.order}`);
 if (reg.decl.label !== '梗百科') throw new Error(`label 不对：${reg.decl.label}`);
@@ -104,6 +105,8 @@ const expectedBits = [
   '常驻用法提示',
   '允许联网补查',
   '预查词长上限',
+  '自定义用法提示',
+  '保存提示',
   '查一下',
   '杂鱼',
   '打不过就嘴硬',

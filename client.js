@@ -88,6 +88,21 @@ window.__ModuleLoader__.load({
         outline: 'none',
         font: 'inherit',
       },
+      textarea: {
+        width: '100%',
+        minHeight: 96,
+        padding: '8px 10px',
+        borderRadius: 7,
+        border: `1px solid ${colors.borderStrong}`,
+        background: colors.layer2,
+        color: colors.text,
+        fontSize: 13,
+        lineHeight: 1.55,
+        fontFamily: 'inherit',
+        resize: 'vertical',
+        outline: 'none',
+        boxSizing: 'border-box',
+      },
       button: (primary) => ({
         padding: '7px 14px',
         borderRadius: 7,
@@ -183,6 +198,8 @@ window.__ModuleLoader__.load({
       const [answer, setAnswer] = useState(null);
       const [draftName, setDraftName] = useState('');
       const [draftMeaning, setDraftMeaning] = useState('');
+      /** null = 没改过，直接显示已保存的值；字符串 = 正在编辑 */
+      const [draftGuidance, setDraftGuidance] = useState(null);
 
       const load = useCallback(async () => {
         try {
@@ -195,6 +212,12 @@ window.__ModuleLoader__.load({
       }, []);
 
       useEffect(() => { load(); }, [load]);
+
+      const settings = state?.settings ?? {};
+      const db = state?.db ?? { available: false, count: 0, builtAt: '' };
+      const terms = state?.terms ?? [];
+      const stats = state?.stats ?? { lookups: 0 };
+      const guidanceValue = draftGuidance ?? settings.guidance ?? '';
 
       const act = useCallback(async (fn) => {
         setBusy(true);
@@ -210,6 +233,20 @@ window.__ModuleLoader__.load({
       const patch = useCallback((key, value) => act(async () => {
         const data = await api('settings', { settings: { [key]: value } });
         setState((prev) => (prev ? { ...prev, settings: data.settings } : prev));
+        setMessage('');
+      }), [act]);
+
+      const saveGuidance = useCallback(() => act(async () => {
+        const data = await api('settings', { settings: { guidance: guidanceValue } });
+        setState((prev) => (prev ? { ...prev, settings: data.settings } : prev));
+        setDraftGuidance(null);
+        setMessage('');
+      }), [act, guidanceValue]);
+
+      const resetGuidance = useCallback(() => act(async () => {
+        const data = await api('settings', { settings: { guidance: '' } });
+        setState((prev) => (prev ? { ...prev, settings: data.settings } : prev));
+        setDraftGuidance(null);
         setMessage('');
       }), [act]);
 
@@ -237,11 +274,6 @@ window.__ModuleLoader__.load({
         setState((prev) => (prev ? { ...prev, terms: data.terms } : prev));
         setMessage('');
       }), [act]);
-
-      const settings = state?.settings ?? {};
-      const db = state?.db ?? { available: false, count: 0, builtAt: '' };
-      const terms = state?.terms ?? [];
-      const stats = state?.stats ?? { lookups: 0 };
 
       return h('div', { style: S.page },
         h('div', { style: S.hero },
@@ -287,7 +319,25 @@ window.__ModuleLoader__.load({
                 const n = Number(e.target.value);
                 if (Number.isFinite(n) && n >= 2 && n <= 20) patch('maxQueryChars', n);
               },
-            }))),
+            })),
+          h('div', { style: S.rowMain },
+            h('span', { style: S.rowName }, '自定义用法提示'),
+            h('span', { style: S.hint }, '整段替换常驻提示，留空用内置文案；改完点保存。'),
+            h('textarea', {
+              style: S.textarea,
+              rows: 5,
+              maxLength: 4000,
+              spellCheck: false,
+              placeholder: settings.guidanceText || '',
+              value: guidanceValue,
+              disabled: busy,
+              onChange: (e) => setDraftGuidance(e.target.value),
+            }),
+            h('div', { style: { display: 'flex', gap: 8, justifyContent: 'flex-end' } },
+              settings.guidance
+                ? h('button', { type: 'button', style: S.button(false), disabled: busy, onClick: resetGuidance }, '恢复内置')
+                : null,
+              h('button', { type: 'button', style: S.button(true), disabled: busy, onClick: saveGuidance }, '保存提示')))),
 
         h('section', { style: S.card },
           h('div', { style: S.cardTitle }, '查词'),
